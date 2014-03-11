@@ -72,15 +72,15 @@ module.exports = function handlePrepare(project_dir, platform, plugins_dir, www_
     events.emit('verbose', 'Processing configuration changes for plugins.');
     config_changes.process(plugins_dir, project_dir, platform);
 
-    // for windows phone plaform we need to add all www resources to the .csproj file
+    // for windows phone and windows8 plaforms we need to add all www resources to the proj file
     // first we need to remove them all to prevent duplicates
-    var wp_csproj;
-    if(platform == 'wp7' || platform == 'wp8') {
-        wp_csproj = (platform == wp7? wp7.parseProjectFile(project_dir) : wp8.parseProjectFile(project_dir));
-        var item_groups = wp_csproj.xml.findall('ItemGroup');
+    var projFile;
+    if(platform == 'wp8' || platform == 'windows8') {
+        projFile = (platform == 'wp8') ? wp8.parseProjectFile(project_dir) : windows8.parseProjectFile(project_dir);
+        var item_groups = projFile.xml.findall('ItemGroup');
         for (var i = 0, l = item_groups.length; i < l; i++) {
             var group = item_groups[i];
-            var files = group.findall('Content');
+            var files = group.findall('Content').concat(group.findall('TypeScriptCompile'));
             for (var j = 0, k = files.length; j < k; j++) {
                 var file = files[j];
                 if (file.attrib.Include.substr(0,11) == "www\\plugins" || file.attrib.Include == "www\\cordova_plugins.js") {
@@ -89,32 +89,11 @@ module.exports = function handlePrepare(project_dir, platform, plugins_dir, www_
                     // remove ItemGroup if empty
                     var new_group = group.findall('Content');
                     if(new_group.length < 1) {
-                        wp_csproj.xml.getroot().remove(0, group);
+                        projFile.xml.getroot().remove(0, group);
                     }
                 }
             }
         }
-    }
-    else if(platform == "windows8") {
-        wp_csproj = windows8.parseProjectFile(project_dir);
-        var item_groups = wp_csproj.xml.findall('ItemGroup');
-        for (var i = 0, l = item_groups.length; i < l; i++) {
-            var group = item_groups[i];
-            var files = group.findall('Content');
-            for (var j = 0, k = files.length; j < k; j++) {
-                var file = files[j];
-                if (file.attrib.Include.substr(0,11) == "www\\plugins" || file.attrib.Include == "www\\cordova_plugins.js") {
-                    // remove file reference
-                    group.remove(0, file);
-                    // remove ItemGroup if empty
-                    var new_group = group.findall('Content');
-                    if(new_group.length < 1) {
-                        wp_csproj.xml.getroot().remove(0, group);
-                    }
-                }
-            }
-        }
-
     }
 
     platform_json = config_changes.get_platform_json(plugins_dir, platform);
@@ -173,21 +152,26 @@ module.exports = function handlePrepare(project_dir, platform, plugins_dir, www_
             if (module.attrib.name) {
                 moduleName += module.attrib.name;
             } else {
-                var result = module.attrib.src.match(/([^\/]+)\.js/);
+                var result = module.attrib.src.match(/([^\/]+)\.(js|ts)/);
                 moduleName += result[1];
             }
 
+            var isTypeScriptFile = module.attrib.src.match('.ts$') != null;
             var fsPath = path.join.apply(path, pathParts);
             var scriptContent = fs.readFileSync(path.join(pluginDir, fsPath), 'utf-8');
-            scriptContent = 'cordova.define("' + moduleName + '", function(require, exports, module) { ' + scriptContent + '\n});\n';
+            scriptContent = (!isTypeScriptFile) ? 'cordova.define("' + moduleName + '", function(require, exports, module) { ' + scriptContent + '\n});\n' :
+                // // due to ts format restrictions we can't place content inside function so we use a different way
+              	'var module = { exports: null};\n' + scriptContent + '\ndeclare var cordova: any; var moduleExports = module.exports;\ncordova.define("' + moduleName +
+                '", function(require, exports, module) {module.exports = moduleExports;\n});\n';
             fs.writeFileSync(path.join(platformPluginsDir, plugin_id, fsPath), scriptContent, 'utf-8');
             if(platform == 'wp7' || platform == 'wp8' || platform == "windows8") {
-                wp_csproj.addSourceFile(path.join('www', 'plugins', plugin_id, fsPath));
+                projFile.addSourceFile(path.join('www', 'plugins', plugin_id, fsPath));
             }
 
             // Prepare the object for cordova_plugins.json.
             var obj = {
-                file: ['plugins', plugin_id, module.attrib.src].join('/'),
+                // for typescript (.ts) we should specify a compiled file (.js) instead
+                file: ['plugins', plugin_id, module.attrib.src].join('/').replace(new RegExp('.ts$'), '.js'),
                 id: moduleName
             };
 
@@ -226,7 +210,7 @@ module.exports = function handlePrepare(project_dir, platform, plugins_dir, www_
     fs.writeFileSync(path.join(wwwDir, 'cordova_plugins.js'), final_contents, 'utf-8');
 
     if(platform == 'wp7' || platform == 'wp8' || platform == "windows8") {
-        wp_csproj.addSourceFile(path.join('www', 'cordova_plugins.js'));
-        wp_csproj.write();
+        projFile.addSourceFile(path.join('www', 'cordova_plugins.js'));
+        projFile.write();
     }
 };

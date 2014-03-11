@@ -89,6 +89,26 @@ csproj.prototype = {
             }
             item.append(compile);
         }
+        // typescript
+        else if (extName == ".ts")  {
+            var compile = new et.Element('TypeScriptCompile');
+            compile.attrib.Include = relative_path;
+            item.append(compile);
+
+            // check whether typescript target is already imported
+            var target = "$(MSBuildExtensionsPath32)\\Microsoft\\VisualStudio\\v$(VisualStudioVersion)\\TypeScript\\Microsoft.TypeScript.targets"
+            if(this.xml.getroot().findall('Import[@Project=\''+ target + '\']').length == 0) {
+                var tsImport = new et.Element('Import');
+                tsImport.attrib.Project = target;
+                this.xml.getroot().append(tsImport);
+				if (path.extname(this.location) == '.jsproj' ) { // win8
+                    //for win8 js apps we also need the following
+                    var tsImport2 = new et.Element('Import');
+                    tsImport2.attrib.Project = '$(MSBuildExtensionsPath32)\\Microsoft\\VisualStudio\\v$(VisualStudioVersion)\\TypeScript\\Microsoft.VisualStudio.$(WMSJSProject).targets';
+                    jsproj_xml.getroot().append(tsImport2);
+                }
+            }
+        }
         else { // otherwise add it normally
             var compile = new et.Element('Content');
             compile.attrib.Include = relative_path;
@@ -109,7 +129,8 @@ csproj.prototype = {
                     // remove file reference
                     group.remove(0, file);
                     // remove ItemGroup if empty
-                    var new_group = group.findall('Compile').concat(group.findall('Page')).concat(group.findall('Content'));
+                    var new_group = group.findall('Compile').concat(group.findall('Page'))
+                        .concat(group.findall('Content')).concat(group.findall('TypeScriptCompile'));
                     if(new_group.length < 1) {
                         this.xml.getroot().remove(0, group);
                     }
