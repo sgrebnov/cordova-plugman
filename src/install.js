@@ -137,7 +137,7 @@ function callEngineScripts(engines) {
         engines.map(function(engine){
             // CB-5192; on Windows scriptSrc doesn't have file extension so we shouldn't check whether the script exists
 
-            var scriptPath = engine.scriptSrc ? '"' + engine.scriptSrc + '"' : null;		
+            var scriptPath = engine.scriptSrc ? '"' + engine.scriptSrc + '"' : null;
 
             if(scriptPath && (isWindows || fs.existsSync(engine.scriptSrc)) ) {
 
@@ -300,7 +300,14 @@ var runInstall = module.exports.runInstall = function runInstall(actions, platfo
                 copyPlugin(plugin_dir, plugins_dir, options.link);
             }
 
-            return handleInstall(actions, plugin_id, plugin_et, platform, project_dir, plugins_dir, install_plugin_dir, filtered_variables, options.www_dir, options.is_top_level);
+            var pluginHooks = require('./util/hooks');
+
+            pluginHooks.fire('beforeinstall', plugin_id, plugin_et, platform, project_dir, plugin_dir).then(function() {
+                return handleInstall(actions, plugin_id, plugin_et, platform, project_dir, plugins_dir,
+                    install_plugin_dir, filtered_variables, options.www_dir, options.is_top_level);
+            }).then(function(){
+                return pluginHooks.fire('afterinstall', plugin_id, plugin_et, platform, project_dir, plugin_dir);
+            });
         }
     ).fail(
         function (error) {
@@ -418,10 +425,10 @@ function tryFetchDependency(dep, install) {
 
     // CB-4770: registry fetching
     if(dep.url === undefined) {
-        dep.url = dep.plugin_id;							
-    }	
+        dep.url = dep.plugin_id;
+    }
 
-    return Q(dep.url);	
+    return Q(dep.url);
 }
 
 function installDependency(dep, install, options) {
